@@ -2,54 +2,179 @@ const express = require('express');
 const router = express.Router();
 const { protect, admin } = require('../middleware/auth.middleware');
 const User = require('../models/User');
-const MenuItem = require('../models/Menu');
+const Menu = require('../models/Menu');
 const Table = require('../models/Table');
 const Order = require('../models/Order');
 
-// User Management
+// Lấy danh sách người dùng
+router.get('/users', protect, admin, async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Tạo người dùng mới
 router.post('/users', protect, admin, async (req, res) => {
   try {
     const { username, password, name, role } = req.body;
+    
+    const userExists = await User.findOne({ username });
+    if (userExists) {
+      return res.status(400).json({ message: 'Username already exists' });
+    }
+
     const user = new User({
       username,
       password,
       name,
       role
     });
-    await user.save();
-    res.status(201).json(user);
+
+    const savedUser = await user.save();
+    res.status(201).json({
+      id: savedUser._id,
+      username: savedUser.username,
+      name: savedUser.name,
+      role: savedUser.role
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
-// Menu Management
-router.post('/menu', protect, admin, async (req, res) => {
+// Sửa thông tin người dùng
+router.put('/users/:id', protect, admin, async (req, res) => {
   try {
-    const menuItem = new MenuItem(req.body);
-    await menuItem.save();
-    res.status(201).json(menuItem);
+    const { username, name, role, password } = req.body;
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (username && username !== user.username) {
+      const userExists = await User.findOne({ username });
+      if (userExists) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+      user.username = username;
+    }
+
+    if (name) user.name = name;
+    if (role) user.role = role;
+    if (password) user.password = password;
+
+    const updatedUser = await user.save();
+    res.json({
+      id: updatedUser._id,
+      username: updatedUser.username,
+      name: updatedUser.name,
+      role: updatedUser.role
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
-router.put('/menu/:id', protect, admin, async (req, res) => {
+// Xóa người dùng
+router.delete('/users/:id', protect, admin, async (req, res) => {
   try {
-    const menuItem = await MenuItem.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
-    res.json(menuItem);
+    const user = await User.findById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.role === 'admin') {
+      const adminCount = await User.countDocuments({ role: 'admin' });
+      if (adminCount <= 1) {
+        return res.status(400).json({ message: 'Cannot delete the last admin user' });
+      }
+    }
+
+    await user.remove();
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
-// Table Management
+// Tạo món mới vào Menu
+router.post('/menu-items', protect, admin, async (req, res) => {
+  try {
+    let menu = await Menu.findOne();
+    if (!menu) {
+      menu = new Menu();
+    }
+    menu.items.push(req.body);
+    await menu.save();
+    res.status(201).json(menu.items[menu.items.length - 1]);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Xem Menu
+router.get('/menu-items', protect, admin, async (req, res) => {
+  try {
+    const menu = await Menu.findOne();
+    res.json(menu ? menu.items : []);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Sửa món trong Menu
+router.put('/menu-items/:itemId', protect, admin, async (req, res) => {
+  try {
+    const menu = await Menu.findOne();
+    const itemIndex = menu.items.findIndex(item => item._id.toString() === req.params.itemId);
+    if (itemIndex === -1) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    menu.items[itemIndex] = { ...menu.items[itemIndex].toObject(), ...req.body };
+    await menu.save();
+    res.json(menu.items[itemIndex]);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Xóa món trong Menu
+router.delete('/menu-items/:itemId', protect, admin, async (req, res) => {
+  try {
+    const menu = await Menu.findOne();
+    menu.items = menu.items.filter(item => item._id.toString() !== req.params.itemId);
+    await menu.save();
+    res.json({ message: 'Item deleted' });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get all tables
+router.get('/tables', protect, admin, async (req, res) => {
+  try {
+    const tables = await Table.find().sort('tableNumber');
+    res.json(tables);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Create table
 router.post('/tables', protect, admin, async (req, res) => {
   try {
+    const { tableNumber } = req.body;
+    const tableExists = await Table.findOne({ tableNumber });
+    
+    if (tableExists) {
+      return res.status(400).json({ message: 'Table number already exists' });
+    }
+
     const table = new Table(req.body);
     await table.save();
     res.status(201).json(table);
@@ -58,23 +183,93 @@ router.post('/tables', protect, admin, async (req, res) => {
   }
 });
 
-// Dashboard Data
+// Update table
+router.put('/tables/:id', protect, admin, async (req, res) => {
+  try {
+    const { tableNumber } = req.body;
+    if (tableNumber) {
+      const tableExists = await Table.findOne({ 
+        tableNumber, 
+        _id: { $ne: req.params.id } 
+      });
+      if (tableExists) {
+        return res.status(400).json({ message: 'Table number already exists' });
+      }
+    }
+
+    const table = await Table.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
+    if (!table) {
+      return res.status(404).json({ message: 'Table not found' });
+    }
+
+    res.json(table);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete table
+router.delete('/tables/:id', protect, admin, async (req, res) => {
+  try {
+    const table = await Table.findById(req.params.id);
+    
+    if (!table) {
+      return res.status(404).json({ message: 'Table not found' });
+    }
+
+    if (table.status !== 'available') {
+      return res.status(400).json({ message: 'Cannot delete table that is currently in use' });
+    }
+
+    await table.remove();
+    res.json({ message: 'Table deleted successfully' });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Update table status
+router.patch('/tables/:id/status', protect, admin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const table = await Table.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    if (!table) {
+      return res.status(404).json({ message: 'Table not found' });
+    }
+
+    res.json(table);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Dashboard endpoint
 router.get('/dashboard', protect, admin, async (req, res) => {
   try {
+    // Today's stats
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setHours(0,0,0,0);
 
-    const [dailyStats, totalUsers, totalTables, popularItems] = await Promise.all([
-      // Daily sales statistics
+    const [dailyStats, tableStatus, userStats] = await Promise.all([
+      // Sales statistics
       Order.aggregate([
-        { 
-          $match: { 
+        {
+          $match: {
             createdAt: { $gte: today },
-            status: 'completed',
             paymentStatus: 'paid'
           }
         },
-        { 
+        {
           $group: {
             _id: null,
             totalSales: { $sum: '$totalAmount' },
@@ -82,29 +277,32 @@ router.get('/dashboard', protect, admin, async (req, res) => {
           }
         }
       ]),
-      // Total users count
-      User.countDocuments(),
-      // Total tables count
-      Table.countDocuments(),
-      // Popular items
-      Order.aggregate([
-        { $unwind: '$items' },
-        { 
+
+      // Table status count
+      Table.aggregate([
+        {
           $group: {
-            _id: '$items.menuItem',
-            totalOrdered: { $sum: '$items.quantity' }
+            _id: '$status',
+            count: { $sum: 1 }
           }
-        },
-        { $sort: { totalOrdered: -1 } },
-        { $limit: 5 }
+        }
+      ]),
+
+      // User count by role
+      User.aggregate([
+        {
+          $group: {
+            _id: '$role',
+            count: { $sum: 1 }
+          }
+        }
       ])
     ]);
 
     res.json({
       dailyStats: dailyStats[0] || { totalSales: 0, orderCount: 0 },
-      totalUsers,
-      totalTables,
-      popularItems
+      tableStatus,
+      userStats
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
