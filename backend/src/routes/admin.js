@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { protect, admin } = require('../middleware/auth.middleware');
 const User = require('../models/User');
-const Menu = require('../models/Menu');
+const { Menu, MenuItem } = require('../models/Menu');
 const Table = require('../models/Table');
 const Order = require('../models/Order');
 
@@ -102,58 +102,71 @@ router.delete('/users/:id', protect, admin, async (req, res) => {
   }
 });
 
-// Tạo món mới vào Menu
+// Thêm món mới vào Menu
 router.post('/menu-items', protect, admin, async (req, res) => {
   try {
-    let menu = await Menu.findOne();
+    let menu = await Menu.findOne(); // Tìm menu
     if (!menu) {
-      menu = new Menu();
+      menu = new Menu({ items: [] }); // Nếu chưa có menu, tạo mới
     }
-    menu.items.push(req.body);
+    menu.items.push(req.body); // Thêm món mới vào mảng items
     await menu.save();
-    res.status(201).json(menu.items[menu.items.length - 1]);
+    res.status(201).json(menu.items[menu.items.length - 1]); // Trả về món vừa thêm
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
-// Xem Menu
+
+// Admin xem Menu
 router.get('/menu-items', protect, admin, async (req, res) => {
   try {
-    const menu = await Menu.findOne();
-    res.json(menu ? menu.items : []);
+    const menu = await Menu.findOne(); // Tìm menu
+    if (!menu || menu.items.length === 0) {
+      return res.status(404).json({ message: 'Menu is empty' });
+    }
+    res.json(menu.items); // Trả về danh sách món
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(500).json({ message: error.message });
   }
 });
+
 
 // Sửa món trong Menu
 router.put('/menu-items/:itemId', protect, admin, async (req, res) => {
   try {
-    const menu = await Menu.findOne();
+    const menu = await Menu.findOne(); // Tìm menu
+    if (!menu) {
+      return res.status(404).json({ message: 'Menu not found' });
+    }
     const itemIndex = menu.items.findIndex(item => item._id.toString() === req.params.itemId);
     if (itemIndex === -1) {
       return res.status(404).json({ message: 'Item not found' });
     }
-    menu.items[itemIndex] = { ...menu.items[itemIndex].toObject(), ...req.body };
+    menu.items[itemIndex] = { ...menu.items[itemIndex].toObject(), ...req.body }; // Cập nhật thông tin
     await menu.save();
-    res.json(menu.items[itemIndex]);
+    res.json(menu.items[itemIndex]); // Trả về món đã sửa
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
+
 // Xóa món trong Menu
 router.delete('/menu-items/:itemId', protect, admin, async (req, res) => {
   try {
-    const menu = await Menu.findOne();
-    menu.items = menu.items.filter(item => item._id.toString() !== req.params.itemId);
+    const menu = await Menu.findOne(); // Tìm menu
+    if (!menu) {
+      return res.status(404).json({ message: 'Menu not found' });
+    }
+    menu.items = menu.items.filter(item => item._id.toString() !== req.params.itemId); // Loại bỏ món khỏi mảng
     await menu.save();
-    res.json({ message: 'Item deleted' });
+    res.json({ message: 'Item deleted successfully' });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
+
 
 // Get all tables
 router.get('/tables', protect, admin, async (req, res) => {
