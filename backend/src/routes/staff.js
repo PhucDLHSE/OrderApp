@@ -89,8 +89,8 @@ router.get('/tables/:tableId/orders', protect, staff, async (req, res) => {
   try {
     const orders = await Order.find({ 
       table: req.params.tableId,
-      paymentStatus: 'unpaid',  // Chỉ lấy các order chưa thanh toán
-      status: 'active'  // Và đang active
+      paymentStatus: 'unpaid',  
+      status: 'active'  
     })
     .populate('staff', '_id name')
     .sort('-createdAt');
@@ -116,20 +116,13 @@ router.get('/menu', protect, staff, async (req, res) => {
 router.post('/orders', protect, staff, async (req, res) => {
   try {
     const { tableId, items } = req.body;
-    
-    // Kiểm tra bàn tồn tại
     const table = await Table.findById(tableId);
     if (!table) {
       return res.status(404).json({ message: 'Không tìm thấy bàn' });
     }
-
-    // Không cần kiểm tra bàn đã có người hay chưa
-    // Vì 1 bàn có thể có nhiều order
-
     const menu = await Menu.findOne();
     let totalAmount = 0;
     
-    // Xử lý nhiều món trong 1 order
     const orderItems = items.map(item => {
       const menuItem = menu.items.id(item.menuItemId);
       if (!menuItem) throw new Error('Món không có trong menu');
@@ -155,7 +148,6 @@ router.post('/orders', protect, staff, async (req, res) => {
 
     await order.save();
 
-    // Tự động cập nhật trạng thái bàn thành 'occupied' khi có order đầu tiên
     if (table.status === 'available') {
       table.status = 'occupied';
       await table.save();
@@ -184,7 +176,6 @@ router.post('/orders/:orderNumber/add-items', protect, staff, async (req, res) =
     const menu = await Menu.findOne();
     let additionalAmount = 0;
 
-    // Xử lý các món thêm
     const newItems = items.map(item => {
       const menuItem = menu.items.id(item.menuItemId);
       if (!menuItem) throw new Error('Món không có trong menu');
@@ -196,11 +187,10 @@ router.post('/orders/:orderNumber/add-items', protect, staff, async (req, res) =
         price: menuItem.price,
         quantity: item.quantity,
         notes: item.notes || '',
-        status: 'preparing'  // Mặc định preparing cho món mới
+        status: 'preparing' 
       };
     });
 
-    // Thêm món và cập nhật tổng tiền
     order.items.push(...newItems);
     order.totalAmount += additionalAmount;
     await order.save();
@@ -216,14 +206,11 @@ router.get('/orders-list', protect, staff, async (req, res) => {
   try {
     const { page = 1, limit = 10, status, paymentStatus } = req.query;
 
-    // Xây dựng filter
     let filter = {};
     if (status) filter.status = status;
     if (paymentStatus) filter.paymentStatus = paymentStatus;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    // Query orders với pagination
     const orders = await Order.find(filter)
       .populate('table', 'tableNumber capacity status')
       .populate('staff', '_id name')
@@ -231,10 +218,8 @@ router.get('/orders-list', protect, staff, async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Đếm tổng số orders
     const total = await Order.countDocuments(filter);
 
-    // Thống kê
     const stats = {
       total,
       active: await Order.countDocuments({ status: 'active' }),
@@ -265,13 +250,11 @@ router.get('/orders/paid', protect, staff, async (req, res) => {
   try {
     const { startDate, endDate, page = 1, limit = 10 } = req.query;
 
-    // Xây dựng filter
     let filter = {
       paymentStatus: 'paid',
       status: 'completed'
     };
 
-    // Thêm filter theo thời gian nếu có
     if (startDate || endDate) {
       filter.createdAt = {};
       if (startDate) {
@@ -286,7 +269,6 @@ router.get('/orders/paid', protect, staff, async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Query orders với populate
     const orders = await Order.find(filter)
       .populate('table', 'tableNumber capacity status')
       .populate('staff', '_id name')
@@ -294,10 +276,8 @@ router.get('/orders/paid', protect, staff, async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Đếm tổng số orders
     const total = await Order.countDocuments(filter);
 
-    // Tính tổng doanh thu trong khoảng thời gian
     const revenue = await Order.aggregate([
       { $match: filter },
       { 
@@ -309,7 +289,6 @@ router.get('/orders/paid', protect, staff, async (req, res) => {
       }
     ]);
 
-    // Format lại dữ liệu trả về
     const formattedOrders = orders.map(order => ({
       orderNumber: order.orderNumber,
       table: {
@@ -369,7 +348,6 @@ router.get('/orders/:orderNumber', protect, staff, async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy order' });
     }
 
-    // Chuyển order sang object và lọc lại thông tin
     const orderObject = {
       ...order.toObject(),
       items: order.items.map(item => ({
@@ -406,7 +384,6 @@ router.post('/orders/:orderNumber/cancel', protect, staff, async (req, res) => {
     order.cancelledBy = req.user._id;
     await order.save();
 
-    // Kiểm tra và giải phóng bàn nếu không còn order active
     const activeOrders = await Order.find({
       table: order.table,
       status: 'active'
@@ -430,14 +407,12 @@ router.post('/tables/:tableId/payment', protect, staff, async (req, res) => {
   try {
     const { paymentMethod } = req.body;
     
-    // Lấy tất cả order chưa thanh toán của bàn
     const unpaidOrders = await Order.find({
       table: req.params.tableId,
       paymentStatus: 'unpaid',
       status: 'active'
     });
 
-    // Thanh toán tất cả order
     await Promise.all(unpaidOrders.map(order => {
       order.paymentStatus = 'paid';
       order.paymentMethod = paymentMethod;
@@ -445,7 +420,6 @@ router.post('/tables/:tableId/payment', protect, staff, async (req, res) => {
       return order.save();
     }));
 
-    // Giải phóng bàn
     await Table.findByIdAndUpdate(req.params.tableId, { 
       status: 'available'
     });
@@ -470,25 +444,21 @@ router.post('/orders/:orderNumber/payment', protect, staff, async (req, res) => 
       return res.status(400).json({ message: 'Order đã được thanh toán' });
     }
 
-    // Cập nhật trạng thái order
     order.paymentStatus = 'paid';
     order.paymentMethod = paymentMethod;
     order.status = 'completed';
     await order.save();
 
-    // Kiểm tra xem bàn còn order nào chưa thanh toán không
     const pendingOrders = await Order.find({
       table: order.table,
       paymentStatus: 'unpaid',
       status: 'active'
     });
 
-    // Nếu không còn order nào chưa thanh toán, giải phóng bàn
     if (pendingOrders.length === 0) {
       await Table.findByIdAndUpdate(order.table, { status: 'available' });
     }
 
-    // Trả về thông tin order đã thanh toán
     const paidOrder = await Order.findById(order._id)
       .populate('table')
       .populate('staff', '_id name');
