@@ -108,7 +108,7 @@ router.get('/orders/filter/:status', protect, barista, async (req, res) => {
   }
 });
  
-// 5. XEM ORDERS ĐÃ HOÀN THÀNH
+// 5. XEM ORDERS ĐÃ HOÀN THÀNH TRONG NGÀY
 router.get('/orders/completed', protect, barista, async (req, res) => {
   try {
     const { date } = req.query;

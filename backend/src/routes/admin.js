@@ -512,6 +512,7 @@ router.get('/dashboard/stats', protect, admin, async (req, res) => {
       {
         $group: {
           _id: "$staff",
+          name: { $first: "$staffName" },
           totalOrders: { $sum: 1 },
           totalRevenue: { $sum: "$totalAmount" }
         }

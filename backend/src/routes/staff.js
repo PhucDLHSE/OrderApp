@@ -4,6 +4,8 @@ const { protect, staff } = require('../middleware/auth.middleware');
 const Table = require('../models/Table');
 const { Menu, MenuItem } = require('../models/Menu');
 const Order = require('../models/Order');
+const PDFDocument = require('pdfkit');
+const createInvoice = require('../utils/createInvoice');
 
 // @route   GET api/staff/orders
 // @desc    Get all active orders
@@ -466,6 +468,51 @@ router.post('/orders/:orderNumber/payment', protect, staff, async (req, res) => 
     res.json(paidOrder);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// 3. TẠO HÓA ĐƠN PDF
+router.get('/orders/:orderNumber/invoice', protect, staff, async (req, res) => {
+  try {
+    const order = await Order.findOne({ orderNumber: req.params.orderNumber })
+      .populate('table')
+      .populate('staff', 'name');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Làm gì có order này!' });
+    }
+
+    // Set response headers trước khi pipe
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 
+      `attachment; filename=invoice-${order.orderNumber}.pdf`);
+
+    // Xử lý pipe error
+    const doc = new PDFDocument();
+    doc.on('error', (err) => {
+      console.error('PDFDocument error:', err);
+      if (!res.headersSent) {
+        res.status(500).send('Error generating PDF');
+      }
+    });
+
+    // Pipe stream
+    const stream = doc.pipe(res);
+    stream.on('error', (err) => {
+      console.error('Stream error:', err);
+    });
+
+    // Generate PDF
+    createInvoice(order, doc);
+    
+    // End document sau khi tạo xong
+    doc.end();
+
+  } catch (error) {
+    console.error('Route error:', error);
+    if (!res.headersSent) {
+      res.status(400).json({ message: error.message });
+    }
   }
 });
 
