@@ -3,7 +3,6 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 require('dotenv').config();
 
-// Import routes
 const authRoutes = require('./routes/auth');
 const staffRoutes = require('./routes/staff');
 const baristaRoutes = require('./routes/barista');
@@ -11,7 +10,6 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
-// Connect to database
 connectDB();
 
 // Middleware

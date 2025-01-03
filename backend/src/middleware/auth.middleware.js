@@ -10,10 +10,10 @@ const protect = async (req, res, next) => {
       req.user = await User.findById(decoded.id).select('-password');
       next();
     } else {
-      res.status(401).json({ message: 'Not authorized' });
+      res.status(401).json({ message: 'Token không hợp lệ' });
     }
   } catch (error) {
-    res.status(401).json({ message: 'Not authorized' });
+    res.status(401).json({ message: 'Token không hợp lệ' });
   }
 };
 
@@ -21,7 +21,7 @@ const admin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
     next();
   } else {
-    res.status(401).json({ message: 'Not authorized as admin' });
+    res.status(401).json({ message: 'Yêu cầu quyền Admin' });
   }
 };
 
@@ -29,7 +29,7 @@ const staff = (req, res, next) => {
   if (req.user && req.user.role === 'staff') {
     next();
   } else {
-    res.status(401).json({ message: 'Not authorized as staff' });
+    res.status(401).json({ message: 'Chỉ có staff mới có quyền truy cập' });
   }
 };
 
@@ -37,7 +37,7 @@ const barista = (req, res, next) => {
   if (req.user && req.user.role === 'barista') {
     next();
   } else {
-    res.status(401).json({ message: 'Not authorized as barista' });
+    res.status(401).json({ message: 'Chỉ có barista mới có quyền truy cập' });
   }
 };
 

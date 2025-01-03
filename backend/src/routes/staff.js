@@ -5,7 +5,11 @@ const Table = require('../models/Table');
 const { Menu, MenuItem } = require('../models/Menu');
 const Order = require('../models/Order');
 
-// LẤY TẤT CẢ BÀN
+// @route   GET api/staff/orders
+// @desc    Get all active orders
+// @access  Staff only
+
+// 1. LẤY TẤT CẢ BÀN
 router.get('/tables', protect, staff, async (req, res) => {
   try {
     const tables = await Table.find().sort('tableNumber');
@@ -15,7 +19,7 @@ router.get('/tables', protect, staff, async (req, res) => {
   }
 });
 
-// LẤY DANH SÁCH BÀN CÒN TRỐNG
+// 2. LẤY DANH SÁCH BÀN CÒN TRỐNG
 router.get('/tables/available', protect, staff, async (req, res) => {
   try {
     const tables = await Table.find({ status: 'available' }).sort('tableNumber');
@@ -25,7 +29,7 @@ router.get('/tables/available', protect, staff, async (req, res) => {
   }
 });
 
-// LẤY THÔNG TIN BÀN THEO ID
+// 3. LẤY THÔNG TIN BÀN THEO ID
 router.get('/tables/:id', protect, staff, async (req, res) => {
   try {
     const table = await Table.findById(req.params.id);
@@ -38,7 +42,7 @@ router.get('/tables/:id', protect, staff, async (req, res) => {
   }
 });
 
-// CẬP NHẬT TRẠNG THÁI BÀN KHI CÓ KHÁCH ĐẾN
+// 4. CẬP NHẬT TRẠNG THÁI BÀN KHI CÓ KHÁCH ĐẾN
 router.patch('/tables/:id/occupy', protect, staff, async (req, res) => {
   try {
     const table = await Table.findById(req.params.id);
@@ -59,7 +63,7 @@ router.patch('/tables/:id/occupy', protect, staff, async (req, res) => {
   }
 });
 
-// GIẢI PHÓNG BÀN KHI KHÁCH ĐÃ THANH TOÁN
+// 5. GIẢI PHÓNG BÀN KHI KHÁCH ĐÃ THANH TOÁN
 router.patch('/tables/:id/release', protect, staff, async (req, res) => {
   try {
     const table = await Table.findById(req.params.id);
@@ -80,7 +84,7 @@ router.patch('/tables/:id/release', protect, staff, async (req, res) => {
   }
 });
 
-// LẤY DANH SÁCH ORDER CỦA BÀN
+// 5. LẤY DANH SÁCH ORDER CỦA BÀN
 router.get('/tables/:tableId/orders', protect, staff, async (req, res) => {
   try {
     const orders = await Order.find({ 
@@ -97,17 +101,18 @@ router.get('/tables/:tableId/orders', protect, staff, async (req, res) => {
   }
 });
 
-// LẤY MENU
+// 1. LẤY MENU
 router.get('/menu', protect, staff, async (req, res) => {
   try {
-    const menu = await Menu.findOne();
+    const menu = await Menu.findOne()
+    .populate('items.category', 'name');
     res.json(menu.items);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// TẠO ORDER MỚI 
+// 2. TẠO ORDER MỚI 
 router.post('/orders', protect, staff, async (req, res) => {
   try {
     const { tableId, items } = req.body;
@@ -162,7 +167,51 @@ router.post('/orders', protect, staff, async (req, res) => {
   }
 });
 
-// XEM TẤT CẢ ORDER (CÓ THỂ LỌC THEO TRẠNG THÁI VÀ TRẠNG THÁI THANH TOÁN)
+// 3. THÊM MÓN VÀO ORDER
+router.post('/orders/:orderNumber/add-items', protect, staff, async (req, res) => {
+  try {
+    const { items } = req.body;
+    const order = await Order.findOne({ orderNumber: req.params.orderNumber });
+
+    if (!order) {
+      return res.status(404).json({ message: 'Không tìm thấy order' });
+    }
+
+    if (order.status !== 'active') {
+      return res.status(400).json({ message: 'Không thể thêm món vào order không active' });
+    }
+
+    const menu = await Menu.findOne();
+    let additionalAmount = 0;
+
+    // Xử lý các món thêm
+    const newItems = items.map(item => {
+      const menuItem = menu.items.id(item.menuItemId);
+      if (!menuItem) throw new Error('Món không có trong menu');
+
+      additionalAmount += menuItem.price * item.quantity;
+      return {
+        menuItem: menuItem._id,
+        itemName: menuItem.name,
+        price: menuItem.price,
+        quantity: item.quantity,
+        notes: item.notes || '',
+        status: 'preparing'  // Mặc định preparing cho món mới
+      };
+    });
+
+    // Thêm món và cập nhật tổng tiền
+    order.items.push(...newItems);
+    order.totalAmount += additionalAmount;
+    await order.save();
+
+    res.json(order);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// 4.  XEM TẤT CẢ ORDER (CÓ THỂ LỌC THEO TRẠNG THÁI VÀ TRẠNG THÁI THANH TOÁN)
 router.get('/orders-list', protect, staff, async (req, res) => {
   try {
     const { page = 1, limit = 10, status, paymentStatus } = req.query;
@@ -211,7 +260,7 @@ router.get('/orders-list', protect, staff, async (req, res) => {
   }
 });
 
-// XEM TẤT CẢ ORDER ĐÃ THANH TOÁN
+// 5.  XEM TẤT CẢ ORDER ĐÃ THANH TOÁN
 router.get('/orders/paid', protect, staff, async (req, res) => {
   try {
     const { startDate, endDate, page = 1, limit = 10 } = req.query;
@@ -309,7 +358,7 @@ router.get('/orders/paid', protect, staff, async (req, res) => {
   }
 });
 
-// XEM CHI TIẾT ORDER THEO ORDER NUMBER
+// 6. XEM CHI TIẾT ORDER THEO ORDER NUMBER
 router.get('/orders/:orderNumber', protect, staff, async (req, res) => {
   try {
     const order = await Order.findOne({ orderNumber: req.params.orderNumber })
@@ -338,7 +387,45 @@ router.get('/orders/:orderNumber', protect, staff, async (req, res) => {
   }
 });
 
-// THANH TOÁN TẤT CẢ ORDER CỦA BÀN
+// 7. HỦY ORDER
+router.post('/orders/:orderNumber/cancel', protect, staff, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const order = await Order.findOne({ orderNumber: req.params.orderNumber });
+
+    if (!order) {
+      return res.status(404).json({ message: 'Không tìm thấy order' });
+    }
+
+    if (order.status !== 'active') {
+      return res.status(400).json({ message: 'Chỉ có thể hủy order đang active' });
+    }
+
+    order.status = 'cancelled';
+    order.cancelReason = reason;
+    order.cancelledBy = req.user._id;
+    await order.save();
+
+    // Kiểm tra và giải phóng bàn nếu không còn order active
+    const activeOrders = await Order.find({
+      table: order.table,
+      status: 'active'
+    });
+
+    if (activeOrders.length === 0) {
+      await Table.findByIdAndUpdate(order.table, { status: 'available' });
+    }
+
+    res.json({
+      message: 'Hủy order thành công',
+      order
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// 1. THANH TOÁN TẤT CẢ ORDER CỦA BÀN
 router.post('/tables/:tableId/payment', protect, staff, async (req, res) => {
   try {
     const { paymentMethod } = req.body;
@@ -369,7 +456,7 @@ router.post('/tables/:tableId/payment', protect, staff, async (req, res) => {
   }
 });
 
-// THANH TOÁN RIÊNG BIỆT THEO ORDER NUMBER
+// 2. THANH TOÁN RIÊNG BIỆT THEO ORDER NUMBER
 router.post('/orders/:orderNumber/payment', protect, staff, async (req, res) => {
   try {
     const { paymentMethod } = req.body;
@@ -411,7 +498,5 @@ router.post('/orders/:orderNumber/payment', protect, staff, async (req, res) => 
     res.status(400).json({ message: error.message });
   }
 });
-
-
 
 module.exports = router;

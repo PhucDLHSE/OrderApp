@@ -6,8 +6,8 @@ const orderItemSchema = new mongoose.Schema({
    ref: 'MenuItem',
    required: true
  },
- itemName: String, // Tên món ăn
- price: Number, // Giá khi order
+ itemName: String, 
+ price: Number, 
  quantity: {
    type: Number,
    required: true,
@@ -15,8 +15,8 @@ const orderItemSchema = new mongoose.Schema({
  },
  status: {
    type: String,
-   enum: ['pending', 'preparing', 'ready', 'served', 'cancelled'],
-   default: 'pending'
+   enum: ['preparing', 'ready'],
+   default: 'preparing'
  },
  notes: String,
  modifiedBy: {
@@ -69,7 +69,6 @@ const orderSchema = new mongoose.Schema({
  timestamps: true
 });
 
-// Tạo order number tự động trước khi lưu
 orderSchema.pre('save', async function(next) {
  if (!this.orderNumber) {
    const count = await mongoose.model('Order').countDocuments();
