@@ -6,6 +6,10 @@ const { Menu, MenuItem } = require('../models/Menu');
 const Table = require('../models/Table');
 const Order = require('../models/Order');
 const Category = require('../models/Category');
+const upload = require('../middleware/uploadImage');
+const fs = require('fs').promises;
+const path = require('path');
+const { image } = require('pdfkit');
 
 // QUẢN LÝ TÀI KHOẢN
 // 1. TẠO TÀI KHOẢN MỚI
@@ -188,11 +192,15 @@ router.delete('/categories/:id', protect, admin, async (req, res) => {
 
 //QUẢN LÝ MENU
 // 1. THÊM MÓN MỚI VÀO MENU
-router.post('/menu-items', protect, admin, async (req, res) => {
+router.post('/menu-items', protect, admin, upload.single('image'), async (req, res) => {
   try {
     const { categoryId, ...itemData } = req.body;
+
+    let imagePath = null;
+    if (req.file) {
+      imagePath = `/uploads/menu-items/${req.file.filename}`;
+    }
     
-    // Kiểm tra category có tồn tại không
     const category = await Category.findById(categoryId);
     if (!category) {
       return res.status(404).json({ message: 'Category không tồn tại' });
@@ -203,15 +211,18 @@ router.post('/menu-items', protect, admin, async (req, res) => {
       menu = new Menu({ items: [] });
     }
 
-    // Thêm reference đến category
     menu.items.push({
       ...itemData,
-      category: categoryId
+      category: categoryId,
+      image: imagePath
     });
 
     await menu.save();
     res.status(201).json(menu.items[menu.items.length - 1]);
   } catch (error) {
+    if (req.file) {
+      await fs.unlink(req.file.path);
+    }
     res.status(400).json({ message: error.message });
   }
 });
@@ -233,62 +244,134 @@ router.get('/menu-items', protect, admin, async (req, res) => {
 });
 
 // 3. SỬA MÓN TRONG MENU
-router.put('/menu-items/:itemId', protect, admin, async (req, res) => {
-  try {
-    const { categoryId, name, price, description, available } = req.body;
-    const menu = await Menu.findOne();
+router.put('/menu-items/:itemId', protect, admin, upload.single('image'), async (req, res) => { 
+ try {
+   const { categoryId, name, price, description, available } = req.body;
+   const menu = await Menu.findOne();
 
-    if (!menu) {
-      return res.status(404).json({ message: 'Menu không tồn tại' });
+   if (!menu) {
+     if (req.file) {
+       await fs.unlink(req.file.path);
+     }
+     return res.status(404).json({ message: 'Menu không tồn tại' });
+   }
+
+   const itemIndex = menu.items.findIndex(
+     item => item._id.toString() === req.params.itemId
+   );
+
+   if (itemIndex === -1) {
+     if (req.file) {
+       await fs.unlink(req.file.path);
+     }
+     return res.status(404).json({ message: 'Món không tồn tại' });
+   }
+
+   if (name && name !== menu.items[itemIndex].name) {
+     const duplicateName = menu.items.some(
+       item => item.name === name && item._id.toString() !== req.params.itemId
+     );
+     if (duplicateName) {
+       if (req.file) {
+         await fs.unlink(req.file.path);
+       }
+       return res.status(400).json({ message: 'Tên món này đã tồn tại' });
+     }
+   }
+
+   if (categoryId) {
+     const category = await Category.findById(categoryId);
+     if (!category) {
+       if (req.file) {
+         await fs.unlink(req.file.path);
+       }
+       return res.status(400).json({ message: 'Category không hợp lệ' });
+     }
+   }
+
+   let imagePath = menu.items[itemIndex].image;
+   if (req.file) {
+     try {
+       if (menu.items[itemIndex].image) {
+         const oldPath = path.join(__dirname, '../../', menu.items[itemIndex].image);
+         try {
+           await fs.access(oldPath); 
+           await fs.unlink(oldPath); 
+         } catch (err) {
+           console.log('File cũ không tồn tại hoặc đã bị xóa');
+         }
+       }
+       imagePath = `/uploads/menu-items/${req.file.filename}`;
+     } catch (error) {
+       console.error('Lỗi khi xử lý file:', error);
+       await fs.unlink(req.file.path);
+       throw error;
+     }
+   }
+
+   menu.items[itemIndex] = {
+     ...menu.items[itemIndex].toObject(),
+     name: name || menu.items[itemIndex].name,
+     price: price || menu.items[itemIndex].price,
+     category: categoryId || menu.items[itemIndex].category,
+     description: description || menu.items[itemIndex].description,
+     available: available !== undefined ? available : menu.items[itemIndex].available,
+     image: imagePath
+   };
+
+   await menu.save();
+   await menu.populate('items.category', 'name');
+
+   res.json(menu.items[itemIndex]);
+ } catch (error) {
+   if (req.file) {
+     try {
+       await fs.unlink(req.file.path);
+     } catch (unlinkError) {
+       console.error('Lỗi khi xóa file tạm:', unlinkError);
+     }
+   }
+   res.status(400).json({ message: error.message });
+ }
+});
+
+// 4. CẬP NHẬT ẢNH MÓN
+router.patch('/menu-items/:itemId/image', protect, admin, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Vui lòng chọn ảnh' });
     }
 
-    // Find item index
-    const itemIndex = menu.items.findIndex(
-      item => item._id.toString() === req.params.itemId
-    );
+    const menu = await Menu.findOne();
+    const item = menu.items.id(req.params.itemId);
 
-    if (itemIndex === -1) {
+    if (!item) {
+      await fs.unlink(req.file.path);
       return res.status(404).json({ message: 'Món không tồn tại' });
     }
 
-    // Check duplicate name if name is being updated
-    if (name && name !== menu.items[itemIndex].name) {
-      const duplicateName = menu.items.some(
-        item => item.name === name && item._id.toString() !== req.params.itemId
-      );
-      if (duplicateName) {
-        return res.status(400).json({ message: 'Tên món này đã tồn tại' });
+    // Xóa ảnh cũ nếu có
+    if (item.image) {
+      const oldPath = path.join(__dirname, '../../', item.image);
+      if (fs.existsSync(oldPath)) {
+        await fs.unlink(oldPath);
       }
     }
 
-    // Validate category if being updated
-    if (categoryId) {
-      const category = await Category.findById(categoryId);
-      if (!category) {
-        return res.status(400).json({ message: 'Category không hợp lệ' });
-      }
-    }
-
-    // Update item
-    menu.items[itemIndex] = {
-      ...menu.items[itemIndex].toObject(),
-      name: name || menu.items[itemIndex].name,
-      price: price || menu.items[itemIndex].price,
-      category: categoryId || menu.items[itemIndex].category,
-      description: description || menu.items[itemIndex].description,
-      available: available !== undefined ? available : menu.items[itemIndex].available
-    };
-
+    // Cập nhật ảnh mới
+    item.image = `/uploads/menu-items/${req.file.filename}`;
     await menu.save();
-    await menu.populate('items.category', 'name');
 
-    res.json(menu.items[itemIndex]);
+    res.json(item);
   } catch (error) {
+    if (req.file) {
+      await fs.unlink(req.file.path);
+    }
     res.status(400).json({ message: error.message });
   }
 });
 
-// 4. XÓA MÓN TRONG MENU
+// 5. XÓA MÓN TRONG MENU
 router.delete('/menu-items/:itemId', protect, admin, async (req, res) => {
   try {
     const menu = await Menu.findOne();
@@ -329,7 +412,7 @@ router.delete('/menu-items/:itemId', protect, admin, async (req, res) => {
   }
 });
 
-// 5. TẠM NGƯNG PHỤC VỤ MÓN
+// 6. TẠM NGƯNG PHỤC VỤ MÓN
 router.patch('/menu-items/:itemId/available', protect, admin, async (req, res) => {
   try {
     const menu = await Menu.findOne();

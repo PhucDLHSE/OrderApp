@@ -9,6 +9,7 @@ const menuItemSchema = new mongoose.Schema({
     required: true
   },
   description: String,
+  image: String,
   available: { type: Boolean, default: true }
 }, { timestamps: true });
 

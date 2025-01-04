@@ -21,6 +21,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/barista', baristaRoutes);
 app.use('/api/admin', adminRoutes);
+const path = require('path');
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Error handler
 app.use((err, req, res, next) => {
